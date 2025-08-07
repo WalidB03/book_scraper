@@ -1,0 +1,17 @@
+FROM python:3.13.5-slim-bookworm
+RUN adduser --disabled-password --gecos "" appuser
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PLAYWRIGHT_BROWSERS_PATH=/home/appuser/browsers/
+RUN apt-get update && \
+    pip install --no-cache-dir \
+        playwright==1.53.0 \
+        playwright-stealth==2.0.0 \
+        pandas[performance]==2.3.1 && \
+    playwright install --with-deps firefox && \
+    apt-get autoremove -y && \
+    apt-get clean && \
+    rm -rf /root/.cache /var/lib/apt/lists/* /tmp/* /var/tmp/* && \
+    chown -R appuser:appuser /home/appuser/browsers/
+
+#> docker build -t pwbase:v1 -f Dockerfile.pwbase .

@@ -1,37 +1,45 @@
 from playwright.sync_api import sync_playwright
-import logging as log
+import logging
 
-log.basicConfig(level=log.DEBUG, format="[%(asctime)s - %(levelname)s]\t%(message)s")
+format = "[%(asctime)s - %(name)s - %(levelname)s]\t%(message)s"
+logging.basicConfig(level=logging.DEBUG, format=format)
+def set_logger(name, level, format, prop=False, file=None, file_mode="a"):
+    logger = logging.getLogger(name)
+    logger.setLevel(level)
+    logger.propagate = prop
+    if file:
+        handler = logging.FileHandler(file, mode=file_mode)
+    else:
+        handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter(format))
+    logger.addHandler(handler)
+    return logger
 
-error_log = log.getLogger("error")
-error_handler = log.FileHandler("logs/error.log", mode="w")
-error_log.addHandler(error_handler)
-
-network_log = log.getLogger("network")
-network_handler = log.FileHandler("logs/network.log", mode="w")
-network_log.addHandler(network_handler)
+debug_log = set_logger("debug_log", logging.DEBUG, format=format)
+network_log = set_logger("network_log", logging.DEBUG, format=format, prop=True, file="logs/network.log", file_mode="w")
+error_log = set_logger("error_log", logging.ERROR, format=format, prop=True, file="logs/error.log", file_mode="w")
 
 with sync_playwright() as p:
     browser = p.firefox.launch()
     context = browser.new_context()
     page = context.new_page()
-    page.on("request", lambda req: network_log.info(f"[REQ] {req.method} {req.url}"))
-    page.on("response", lambda res: network_log.info(f"[RES] {res.status} {res.url}"))
+    page.on("request", lambda req: network_log.info(f"REQ: {req.method} {req.url}"))
+    page.on("response", lambda res: network_log.info(f"RES: {res.status} {res.url}"))
 
     try:
-        step = "main"
-        network_log.info(f"<{step}>")
+        step = "landing_page"
+        network_log.debug(f"At: {step}")
         page.goto("https://books.toscrape.com/")
-        log.debug(f"</{step}>")
+        debug_log.debug(f"On: {step}")
 
-        step = "travel"
-        network_log.info(f"<{step}>")
+        step = "travel_link"
+        network_log.debug(f"At: {step}")
         page.get_by_role("link", name="Travel", exact=True).click()
-        log.debug(f"</{step}>")
+        debug_log.debug(f"On: {step}")
 
         books_loc = page.locator("ol.row li")
         books_count = books_loc.count()
-        log.debug(f"books count: {books_count}")
+        debug_log.debug(f"books count: {books_count}")
 
         info_table = None
         def get_info_table_data(text, table = info_table):
@@ -43,33 +51,33 @@ with sync_playwright() as p:
 
         for n in range(books_count):
             step = f"book{(n + 1):>02}"
-            network_log.info(f"<{step}>")
+            network_log.debug(f"At: {step}")
             books_loc.nth(n).locator("h3 a").click()
-            log.debug(f"</{step}>")
+            debug_log.debug(f"On: {step}")
 
             title = page.locator(".product_main h1").inner_text()
-            log.debug(f"\ttitle: {title}")
+            debug_log.debug(f"\ttitle: {title}")
 
             stars_class = page.locator(".product_main p.star-rating").get_attribute("class")
             stars = stars_class.split()[1]
-            log.debug(f"\tstars: {stars}")
+            debug_log.debug(f"\tstars: {stars}")
 
             info_table = page.locator(".table-striped")
 
             upc = get_info_table_data("UPC")
-            log.debug(f"\tupc: {upc}")
+            debug_log.debug(f"\tupc: {upc}")
 
             price_excl_tax = get_info_table_data("Price (excl. tax)")
-            log.debug(f"\tprice_excl_tax: {price_excl_tax}")
+            debug_log.debug(f"\tprice_excl_tax: {price_excl_tax}")
 
             price_incl_tax = get_info_table_data("Price (incl. tax)")
-            log.debug(f"\tprice_incl_tax: {price_incl_tax}")
+            debug_log.debug(f"\tprice_incl_tax: {price_incl_tax}")
 
             availability = get_info_table_data("Availability")
-            log.debug(f"\tavailability: {availability}")
+            debug_log.debug(f"\tavailability: {availability}")
 
             num_reviews = get_info_table_data("Number of reviews")
-            log.debug(f"\tnum_reviews: {num_reviews}")
+            debug_log.debug(f"\tnum_reviews: {num_reviews}")
 
             books_info.append({
                 "upc"           : upc,
@@ -81,10 +89,10 @@ with sync_playwright() as p:
                 "num_review"    : num_reviews
             })
 
-            step = "travel"
-            network_log.info(f"<{step}>")
+            step = "travel_link"
+            network_log.debug(f"At: {step}")
             page.go_back()
-            log.debug(f"</{step}>")
+            debug_log.debug(f"On: {step}")
 
         print(books_info)
 

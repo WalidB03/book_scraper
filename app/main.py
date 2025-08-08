@@ -1,4 +1,4 @@
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import sync_playwright, expect
 import logging
 
 format = "[%(asctime)s - %(name)s - %(levelname)s]\t%(message)s"
@@ -19,6 +19,12 @@ debug_log = set_logger("debug_log", logging.DEBUG, format=format)
 network_log = set_logger("network_log", logging.DEBUG, format=format, prop=True, file="logs/network.log", file_mode="w")
 error_log = set_logger("error_log", logging.ERROR, format=format, prop=True, file="logs/error.log", file_mode="w")
 
+def get_table_data(text, table, debug_log=debug_log):
+    data_tr = info_table.locator("tr", has_text=text)
+    data = data_tr.locator("td").inner_text()
+    debug_log.debug(f"\t{text}: {data}")
+    return data
+
 with sync_playwright() as p:
     browser = p.firefox.launch()
     context = browser.new_context()
@@ -27,76 +33,73 @@ with sync_playwright() as p:
     page.on("response", lambda res: network_log.info(f"RES: {res.status} {res.url}"))
 
     try:
-        step = "landing_page"
-        network_log.debug(f"At: {step}")
-        page.goto("https://books.toscrape.com/")
-        debug_log.debug(f"On: {step}")
+        page_num = 1
+        step = f"page{page_num:>02}"
+        network_log.debug(step)
+        page.goto("https://books.toscrape.com/catalogue/page-1.html")
+        debug_log.debug(f"On {step}")
 
-        step = "travel_link"
-        network_log.debug(f"At: {step}")
-        page.get_by_role("link", name="Travel", exact=True).click()
-        debug_log.debug(f"On: {step}")
+        while True:
+            next = page.locator("li.next a")
+            if not expect(next).to_be_visible():
+                next = None
 
-        books_loc = page.locator("ol.row li")
-        books_count = books_loc.count()
-        debug_log.debug(f"books count: {books_count}")
+            books_loc = page.locator("ol.row li")
+            books_count = books_loc.count()
+            debug_log.debug(f"books count: {books_count}")
 
-        info_table = None
-        def get_info_table_data(text, table = info_table):
-            data_tr = info_table.locator("tr").filter(has_text=text)
-            data = data_tr.locator("td").inner_text()
-            return data
+            books = []
+            for n in range(books_count):
+                step = f"page{page_num:>02}_book{(n + 1):>02}"
+                network_log.debug(step)
+                books_loc.nth(n).locator("h3 a").click()
+                debug_log.debug(f"On: {step}")
 
-        books_info = []
+                category = page.locator("ul.breadcrumb > li:nth-of-type(3)").inner_text()
+                debug_log.debug(f"\tcategory: {category}")
 
-        for n in range(books_count):
-            step = f"book{(n + 1):>02}"
-            network_log.debug(f"At: {step}")
-            books_loc.nth(n).locator("h3 a").click()
-            debug_log.debug(f"On: {step}")
+                title = page.locator(".product_main h1").inner_text()
+                debug_log.debug(f"\ttitle: {title}")
 
-            title = page.locator(".product_main h1").inner_text()
-            debug_log.debug(f"\ttitle: {title}")
+                stars_class = page.locator(".product_main p.star-rating").get_attribute("class")
+                stars = stars_class.split()[1]
+                debug_log.debug(f"\tstars: {stars}")
 
-            stars_class = page.locator(".product_main p.star-rating").get_attribute("class")
-            stars = stars_class.split()[1]
-            debug_log.debug(f"\tstars: {stars}")
+                info_table = page.locator(".table-striped")
+                upc = get_table_data("UPC", info_table)
+                price_excl_tax = get_table_data("Price (excl. tax)", info_table)
+                price_incl_tax = get_table_data("Price (incl. tax)", info_table)
+                availability = get_table_data("Availability", info_table)
+                num_reviews = get_table_data("Number of reviews", info_table)
 
-            info_table = page.locator(".table-striped")
+                books.append({
+                    "upc"           : upc,
+                    "title"         : title,
+                    "category"      : category,
+                    "availability"  : availability,
+                    "price_excl_tax": price_excl_tax,
+                    "price_incl_tax": price_incl_tax,
+                    "stars"         : stars,
+                    "num_review"    : num_reviews
+                })
 
-            upc = get_info_table_data("UPC")
-            debug_log.debug(f"\tupc: {upc}")
+                step = f"page{page_num:>02}"
+                network_log.debug(step)
+                page.go_back()
+                debug_log.debug(f"On: {step}")
 
-            price_excl_tax = get_info_table_data("Price (excl. tax)")
-            debug_log.debug(f"\tprice_excl_tax: {price_excl_tax}")
+            if next:
+                page_num += 1
+                step = f"page{page_num:>02}"
+                network_log.debug(step)
+                next.click()
+                debug_log.debug(f"On {step}")
+            else:
+                break
 
-            price_incl_tax = get_info_table_data("Price (incl. tax)")
-            debug_log.debug(f"\tprice_incl_tax: {price_incl_tax}")
-
-            availability = get_info_table_data("Availability")
-            debug_log.debug(f"\tavailability: {availability}")
-
-            num_reviews = get_info_table_data("Number of reviews")
-            debug_log.debug(f"\tnum_reviews: {num_reviews}")
-
-            books_info.append({
-                "upc"           : upc,
-                "title"         : title,
-                "availability"  : availability,
-                "price_excl_tax": price_excl_tax,
-                "price_incl_tax": price_incl_tax,
-                "stars"         : stars,
-                "num_review"    : num_reviews
-            })
-
-            step = "travel_link"
-            network_log.debug(f"At: {step}")
-            page.go_back()
-            debug_log.debug(f"On: {step}")
-
-        print(books_info)
+        print(books)
 
     except Exception as e:
         error_log.exception(step)
-        page.screenshot(path=f"logs/[ERROR]-{step}.png", full_page=True)
+        page.screenshot(path=f"logs/error_{step}.png", full_page=True)
 

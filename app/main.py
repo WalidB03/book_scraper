@@ -41,7 +41,7 @@ with sync_playwright() as p:
 
         while True:
             next = page.locator("li.next a")
-            if not expect(next).to_be_visible():
+            if not next.is_visible():
                 next = None
 
             books_loc = page.locator("ol.row li")

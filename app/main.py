@@ -1,5 +1,6 @@
 from playwright.sync_api import sync_playwright, expect
 import logging
+import csv
 
 format = "[%(asctime)s - %(name)s - %(levelname)s]\t%(message)s"
 logging.basicConfig(level=logging.DEBUG, format=format)
@@ -25,6 +26,15 @@ def get_table_data(text, table, debug_log=debug_log):
     debug_log.debug(f"\t{text}: {data}")
     return data
 
+def write_to_csv(path, data, headers, first_write):
+    mode = "w" if first_write else "a"
+    with open(path, mode) as file:
+        writer = csv.DictWriter(file, fieldnames=headers)
+        if first_write:
+            writer.writeheader()
+        writer.writerow(data)
+first_write = True
+
 with sync_playwright() as p:
     browser = p.firefox.launch()
     context = browser.new_context()
@@ -34,7 +44,7 @@ with sync_playwright() as p:
 
     try:
         page_num = 1
-        step = f"page{page_num:>02}"
+        step = f"page{page_num:02d}"
         network_log.debug(step)
         page.goto("https://books.toscrape.com/catalogue/page-1.html")
         debug_log.debug(f"On {step}")
@@ -48,9 +58,8 @@ with sync_playwright() as p:
             books_count = books_loc.count()
             debug_log.debug(f"books count: {books_count}")
 
-            books = []
             for n in range(books_count):
-                step = f"page{page_num:>02}_book{(n + 1):>02}"
+                step = f"page{page_num:02d}_book{(n + 1):02d}"
                 network_log.debug(step)
                 books_loc.nth(n).locator("h3 a").click()
                 debug_log.debug(f"On: {step}")
@@ -72,7 +81,7 @@ with sync_playwright() as p:
                 availability = get_table_data("Availability", info_table)
                 num_reviews = get_table_data("Number of reviews", info_table)
 
-                books.append({
+                book = {
                     "upc"           : upc,
                     "title"         : title,
                     "category"      : category,
@@ -81,23 +90,24 @@ with sync_playwright() as p:
                     "price_incl_tax": price_incl_tax,
                     "stars"         : stars,
                     "num_review"    : num_reviews
-                })
+                }
+                keys = list(book.keys())
+                write_to_csv("data/books.csv", book, keys, first_write=first_write)
+                first_write = False
 
-                step = f"page{page_num:>02}"
+                step = f"page{page_num:02d}"
                 network_log.debug(step)
                 page.go_back()
                 debug_log.debug(f"On: {step}")
 
             if next:
                 page_num += 1
-                step = f"page{page_num:>02}"
+                step = f"page{page_num:02d}"
                 network_log.debug(step)
                 next.click()
                 debug_log.debug(f"On {step}")
             else:
                 break
-
-        print(books)
 
     except Exception as e:
         error_log.exception(step)
